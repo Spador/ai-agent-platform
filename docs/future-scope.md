@@ -6,7 +6,7 @@ This document outlines potential enhancements and features that could be added t
 
 ---
 
-## Phase 2 Features (Q2 2025)
+## Phase 2 Features (Q2 2026)
 
 ### 1. Visual Workflow Builder
 
@@ -102,7 +102,7 @@ Agent → Approval Request → Notification → Human Decision → Resume
 
 ---
 
-## Phase 3 Features (Q3 2025)
+## Phase 3 Features (Q3 2026)
 
 ### 5. Multi-Modal Support
 
@@ -184,7 +184,7 @@ workflow:
 
 ---
 
-## Phase 4 Features (Q4 2025)
+## Phase 4 Features (Q4 2026)
 
 ### 9. Edge Deployment
 
@@ -357,22 +357,22 @@ workflow:
 
 ## Integration Roadmap
 
-### Q2 2025
+### Q2 2026
 - ✅ Slack integration
 - ✅ GitHub Actions
 - ✅ Notion API
 
-### Q3 2025
+### Q3 2026
 - ⬜ Zapier
 - ⬜ Make.com
 - ⬜ Microsoft Teams
 
-### Q4 2025
+### Q4 2026
 - ⬜ Salesforce
 - ⬜ HubSpot
 - ⬜ Jira
 
-### 2026
+### 2027
 - ⬜ SAP
 - ⬜ Oracle
 - ⬜ Workday
