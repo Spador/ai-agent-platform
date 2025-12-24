@@ -41,6 +41,8 @@ terraform.rc
 .env.*.local
 *.pem
 *.key
+services/llm_gateway/.env*
+services/control_plane/.env*
 
 # AWS
 *.pem
