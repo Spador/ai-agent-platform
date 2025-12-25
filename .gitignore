@@ -43,6 +43,7 @@ terraform.rc
 *.key
 services/llm_gateway/.env*
 services/control_plane/.env*
+workers/orchestrator/.env*
 
 # AWS
 *.pem
