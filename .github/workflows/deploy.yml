@@ -1,0 +1,161 @@
+name: Deploy AI Agent Platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_agent_platform
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies - Control Plane
+        run: |
+          cd services/control_plane
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+      
+      - name: Run Control Plane tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ai_agent_platform
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          cd services/control_plane
+          pytest tests/ -v --cov=src --cov-report=xml
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./services/control_plane/coverage.xml
+
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    strategy:
+      matrix:
+        service:
+          - control_plane
+          - llm_gateway
+          - orchestrator
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build, tag, and push image
+        env:
+          ECR_REPOSITORY: ai-agent-platform-${{ matrix.service }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Determine service path
+          if [ "${{ matrix.service }}" = "orchestrator" ]; then
+            SERVICE_PATH=workers/orchestrator
+          else
+            SERVICE_PATH=services/${{ matrix.service }}
+          fi
+          
+          # Build image
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $SERVICE_PATH
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          # Push image
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Update ECS service - Control Plane
+        run: |
+          aws ecs update-service \
+            --cluster ai-agent-platform-cluster \
+            --service ai-agent-platform-control-plane \
+            --force-new-deployment
+      
+      - name: Update ECS service - LLM Gateway
+        run: |
+          aws ecs update-service \
+            --cluster ai-agent-platform-cluster \
+            --service ai-agent-platform-llm-gateway \
+            --force-new-deployment
+      
+      - name: Update ECS service - Orchestrator
+        run: |
+          aws ecs update-service \
+            --cluster ai-agent-platform-cluster \
+            --service ai-agent-platform-orchestrator \
+            --force-new-deployment
+      
+      - name: Wait for services to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster ai-agent-platform-cluster \
+            --services ai-agent-platform-control-plane
+          
+          aws ecs wait services-stable \
+            --cluster ai-agent-platform-cluster \
+            --services ai-agent-platform-llm-gateway
